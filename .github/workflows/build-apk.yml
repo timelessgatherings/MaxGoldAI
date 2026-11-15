@@ -15,7 +15,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Organize Folder Structure
+      - name: Fix Project Files & Folders
         run: |
           mkdir -p app/src/main/java/com/max/goldai
           mkdir -p app/src/main/res/layout
@@ -26,8 +26,31 @@ jobs:
           mv activity_main.xml app/src/main/res/layout/ 2>/dev/null || true
           mv strings.xml themes.xml app/src/main/res/values/ 2>/dev/null || true
           mv accessibility_service_config.xml app/src/main/res/xml/ 2>/dev/null || true
+          cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.7.2' apply false
+          }
+          EOF
+          cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "MaxGoldAI"
+          include ":app"
+          EOF
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: gradle assembleDebug --stacktrace
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
