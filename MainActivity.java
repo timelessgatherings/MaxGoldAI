@@ -60,7 +60,8 @@ public class MainActivity extends Activity {
     private ScrollView chatScroll;
     private EditText inputMessage, inputApiKey, searchFeatures;
     private Button btnMicManual, btnLangToggle;
-    private LinearLayout tabHome, tabHistory, tabFeatures, tabSettings, featuresListContainer;
+    private View tabHome, tabHistory, tabFeatures, tabSettings;
+    private LinearLayout featuresListContainer;
     private Button navHome, navHistory, navFeatures, navSettings;
 
     private TextToSpeech tts;
@@ -155,7 +156,9 @@ public class MainActivity extends Activity {
                 isMicManualOn = false;
                 btnMicManual.setText("🎤 Mic: OFF");
                 btnMicManual.setBackgroundColor(Color.parseColor("#334155"));
-                if (speechRecognizer != null) speechRecognizer.stopListening();
+                try {
+                    if (speechRecognizer != null) speechRecognizer.stopListening();
+                } catch (Exception ignored) {}
             }
         });
 
@@ -233,41 +236,46 @@ public class MainActivity extends Activity {
     }
 
     private void initTTS() {
-        tts = new TextToSpeech(this, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                tts.setLanguage(Locale.forLanguageTag(currentLangCode));
-                tts.setSpeechRate(0.98f);
-            }
-        });
+        try {
+            tts = new TextToSpeech(this, status -> {
+                if (status == TextToSpeech.SUCCESS) {
+                    tts.setLanguage(Locale.forLanguageTag(currentLangCode));
+                    tts.setSpeechRate(0.98f);
+                }
+            });
+        } catch (Exception ignored) {}
     }
 
     private void initContinuousSpeechRecognizer() {
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
-        speechRecognizer.setRecognitionListener(new RecognitionListener() {
-            @Override public void onReadyForSpeech(Bundle params) {}
-            @Override public void onBeginningOfSpeech() {}
-            @Override public void onRmsChanged(float rmsdB) {}
-            @Override public void onBufferReceived(byte[] buffer) {}
-            @Override public void onEndOfSpeech() {}
+        try {
+            if (!SpeechRecognizer.isRecognitionAvailable(this)) return;
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            speechRecognizer.setRecognitionListener(new RecognitionListener() {
+                @Override public void onReadyForSpeech(Bundle params) {}
+                @Override public void onBeginningOfSpeech() {}
+                @Override public void onRmsChanged(float rmsdB) {}
+                @Override public void onBufferReceived(byte[] buffer) {}
+                @Override public void onEndOfSpeech() {}
 
-            @Override
-            public void onError(int error) {
-                if (isMicManualOn) startListeningLoop();
-            }
-
-            @Override
-            public void onResults(Bundle results) {
-                ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                if (matches != null && !matches.isEmpty()) {
-                    sendToGeminiLive(matches.get(0), pendingImageBase64);
-                    pendingImageBase64 = null;
+                @Override
+                public void onError(int error) {
+                    if (isMicManualOn) startListeningLoop();
                 }
-                if (isMicManualOn) startListeningLoop();
-            }
 
-            @Override public void onPartialResults(Bundle partialResults) {}
-            @Override public void onEvent(int eventType, Bundle params) {}
-        });
+                @Override
+                public void onResults(Bundle results) {
+                    ArrayList<String> matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    if (matches != null && !matches.isEmpty()) {
+                        sendToGeminiLive(matches.get(0), pendingImageBase64);
+                        pendingImageBase64 = null;
+                    }
+                    if (isMicManualOn) startListeningLoop();
+                }
+
+                @Override public void onPartialResults(Bundle partialResults) {}
+                @Override public void onEvent(int eventType, Bundle params) {}
+            });
+        } catch (Exception ignored) {}
     }
 
     private void startListeningLoop() {
@@ -351,19 +359,21 @@ public class MainActivity extends Activity {
     }
 
     private void updateDeviceStatus() {
-        IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-        Intent batteryStatus = registerReceiver(null, ifilter);
-        int level = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) : 0;
-        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo net = cm != null ? cm.getActiveNetworkInfo() : null;
-        boolean connected = net != null && net.isConnected();
+        try {
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent batteryStatus = registerReceiver(null, ifilter);
+            int level = batteryStatus != null ? batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) : 0;
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo net = cm != null ? cm.getActiveNetworkInfo() : null;
+            boolean connected = net != null && net.isConnected();
 
-        deviceStatusText.setText(
-            "📡 Internet Status: " + (connected ? "Connected (Live Online)" : "Offline") + "\n" +
-            "🔋 Battery Level: " + level + "%\n" +
-            "📍 Location: " + getCurrentLocationText() + "\n" +
-            "🌐 Active Language: " + currentLangName + " (" + currentLangCode + ")"
-        );
+            deviceStatusText.setText(
+                "📡 Internet Status: " + (connected ? "Connected (Live Online)" : "Offline") + "\n" +
+                "🔋 Battery Level: " + level + "%\n" +
+                "📍 Location: " + getCurrentLocationText() + "\n" +
+                "🌐 Active Language: " + currentLangName + " (" + currentLangCode + ")"
+            );
+        } catch (Exception ignored) {}
     }
 
     private void requestAllAppPermissions() {
@@ -508,8 +518,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         isMicManualOn = false;
-        if (speechRecognizer != null) speechRecognizer.destroy();
-        if (tts != null) { tts.stop(); tts.shutdown(); }
+        try {
+            if (speechRecognizer != null) speechRecognizer.destroy();
+            if (tts != null) { tts.stop(); tts.shutdown(); }
+        } catch (Exception ignored) {}
         super.onDestroy();
     }
 }
