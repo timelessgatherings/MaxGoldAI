@@ -12,7 +12,6 @@ import android.util.Base64;
 import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import androidx.annotation.NonNull;
-import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -26,7 +25,6 @@ import java.util.concurrent.Executors;
 
 public class MaxAutoTradeService extends AccessibilityService {
 
-    // Calls your authenticated server-side /api/analyze-chart relay (no key embedded in APK).
     private TextToSpeech kannadaTTS;
     private final Handler scanHandler = new Handler(Looper.getMainLooper());
     private boolean isScanning = true;
@@ -80,6 +78,7 @@ public class MaxAutoTradeService extends AccessibilityService {
                             sendChartToGemini(softBitmap);
                         }
                     }
+
                     @Override
                     public void onFailure(int errorCode) {}
                 });
@@ -93,8 +92,6 @@ public class MaxAutoTradeService extends AccessibilityService {
                 chartBitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos);
                 chartBitmap.recycle();
                 String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
-
-                String prompt = "You are MAX Gold ICT Trading Engine for XAUUSD. Analyze this chart across visible timeframes using ICT concepts (Order Block, Breaker Block, FVG, IFVG, PDH/PDL, OTE 0.62-0.79, MSS, Kill-Zones). Compare yesterday vs today bias. Respond ONLY in valid JSON with no markdown: {\"action\": \"BUY\" or \"SELL\" or \"WAIT\", \"confidence\": 85, \"kannada_msg\": \"ಕನ್ನಡದಲ್ಲಿ ಸಂಕ್ಷಿಪ್ತ ವಿಶ್ಲೇಷಣೆ ಮತ್ತು ಕಾನ್ಫಿಡೆನ್ಸ್ ತಿಳಿಸಿ\"}";
 
                 JSONObject requestBody = new JSONObject();
                 requestBody.put("imageBase64", base64Image);
@@ -120,7 +117,6 @@ public class MaxAutoTradeService extends AccessibilityService {
 
                 if (responseCode >= 200 && responseCode < 300) {
                     JSONObject decision = new JSONObject(response);
-
                     String action = decision.optString("action", "WAIT");
                     int confidence = decision.optInt("confidence", 0);
                     String kannadaMsg = decision.optString("kannada_msg", "");
