@@ -1,123 +1,181 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp"
-    android:background="#0F172A">
+package com.max.goldai;
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Max Gold AI — ಜ್ಞಾಪಕ ಶಕ್ತಿ &amp; ಲೈವ್ ಅಸಿಸ್ಟೆಂಟ್"
-        android:textColor="#38BDF8"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
+import android.graphics.Bitmap;
+import android.graphics.Path;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.speech.tts.TextToSpeech;
+import android.util.Base64;
+import android.view.Display;
+import android.view.accessibility.AccessibilityEvent;
+import androidx.annotation.NonNull;
+import org.json.JSONObject;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.Scanner;
+import java.util.concurrent.Executors;
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp">
+public class MaxAutoTradeService extends AccessibilityService {
 
-        <Button
-            android:id="@+id/btnPermissions"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:textSize="11sp"
-            android:text="ಎಲ್ಲಾ ಪರ್ಮಿಷನ್ ನೀಡಿ" />
+    private TextToSpeech kannadaTTS;
+    private final Handler scanHandler = new Handler(Looper.getMainLooper());
+    private boolean isScanning = true;
 
-        <Button
-            android:id="@+id/btnAccessibility"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:textSize="11sp"
-            android:text="ಲೈವ್ ಸ್ಕ್ರೀನ್ ON" />
-    </LinearLayout>
+    // MT5 BUY/SELL coordinates calibrated for 1080x2460
+    private final float BUY_BUTTON_X = 820f;
+    private final float BUY_BUTTON_Y = 2250f;
+    private final float SELL_BUTTON_X = 260f;
+    private final float SELL_BUTTON_Y = 2250f;
+    private static final int CONFIDENCE_GATE = 80;
+    private static final long SCAN_INTERVAL_MS = 15000L;
+    private static final long STARTUP_DELAY_MS = 5000L;
 
-    <ScrollView
-        android:id="@+id/chatScroll"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:layout_marginTop="10dp"
-        android:background="#1E293B"
-        android:padding="12dp">
+    @Override
+    public void onServiceConnected() {
+        super.onServiceConnected();
+        kannadaTTS = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                kannadaTTS.setLanguage(new Locale("kn", "IN"));
+                kannadaTTS.setSpeechRate(0.95f);
+                kannadaTTS.setPitch(1.00f);
+                speakKannada("ಮ್ಯಾಕ್ಸ್ ಗೋಲ್ಡ್ ಐಸಿಟಿ ಆಟೋ ಟ್ರೇಡಿಂಗ್ ಸಕ್ರಿಯವಾಗಿದೆ ಬಾಸ್.");
+            }
+        });
+        startLiveChartLoop();
+    }
 
-        <TextView
-            android:id="@+id/chatHistoryText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="#F1F5F9"
-            android:textSize="14sp"
-            android:lineSpacingExtra="4dp" />
-    </ScrollView>
+    private void startLiveChartLoop() {
+        scanHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (isScanning) {
+                    captureScreenAndAnalyze();
+                }
+                scanHandler.postDelayed(this, SCAN_INTERVAL_MS);
+            }
+        }, STARTUP_DELAY_MS);
+    }
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp">
+    private void captureScreenAndAnalyze() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            takeScreenshot(Display.DEFAULT_DISPLAY, Executors.newSingleThreadExecutor(),
+                new TakeScreenshotCallback() {
+                    @Override
+                    public void onSuccess(@NonNull ScreenshotResult screenshot) {
+                        Bitmap bitmap = Bitmap.wrapHardwareBuffer(
+                            screenshot.getHardwareBuffer(), screenshot.getColorSpace());
+                        if (bitmap != null) {
+                            Bitmap softBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, false);
+                            bitmap.recycle();
+                            sendChartToGemini(softBitmap);
+                        }
+                    }
 
-        <Button
-            android:id="@+id/btnCamera"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:textSize="11sp"
-            android:text="📷 ಕ್ಯಾಮೆರಾ" />
+                    @Override
+                    public void onFailure(int errorCode) {}
+                });
+        }
+    }
 
-        <Button
-            android:id="@+id/btnPhoto"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:textSize="11sp"
-            android:text="🖼️ ಫೋಟೋ" />
+    private void sendChartToGemini(Bitmap chartBitmap) {
+        Executors.newSingleThreadExecutor().execute(() -> {
+            try {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                chartBitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos);
+                chartBitmap.recycle();
+                String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
 
-        <Button
-            android:id="@+id/btnClearMemory"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:textSize="11sp"
-            android:text="🧠 ಮೆಮೊರಿ ಕ್ಲಿಯರ್" />
-    </LinearLayout>
+                JSONObject requestBody = new JSONObject();
+                requestBody.put("imageBase64", base64Image);
+                requestBody.put("mimeType", "image/jpeg");
+                requestBody.put("confidenceGate", CONFIDENCE_GATE);
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="8dp">
+                URL url = new URL("https://ais-dev-nwpboumkkayvdoq6syy3wr-606584189706.asia-northeast1.run.app/api/analyze-chart");
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(20000);
+                conn.setDoOutput(true);
 
-        <EditText
-            android:id="@+id/inputMessage"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:hint="ಕನ್ನಡದಲ್ಲಿ ಕೇಳಿ ಅಥವಾ ಬರೆಯಿರಿ..."
-            android:textColor="#FFFFFF"
-            android:textColorHint="#94A3B8"
-            android:background="#334155"
-            android:padding="10dp" />
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(requestBody.toString().getBytes(StandardCharsets.UTF_8));
+                }
 
-        <Button
-            android:id="@+id/btnMic"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:text="🎤" />
+                int responseCode = conn.getResponseCode();
+                InputStream is = (responseCode >= 200 && responseCode < 300) ? conn.getInputStream() : conn.getErrorStream();
+                Scanner scanner = new Scanner(is, "UTF-8").useDelimiter("\\A");
+                String response = scanner.hasNext() ? scanner.next() : "";
 
-        <Button
-            android:id="@+id/btnSend"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:text="ಕಳುಹಿಸಿ" />
-    </LinearLayout>
-</LinearLayout>
+                if (responseCode >= 200 && responseCode < 300) {
+                    JSONObject decision = new JSONObject(response);
+                    String action = decision.optString("action", "WAIT");
+                    int confidence = decision.optInt("confidence", 0);
+                    String kannadaMsg = decision.optString("kannada_msg", "");
+
+                    if (!kannadaMsg.isEmpty()) {
+                        speakKannada(kannadaMsg);
+                        getSharedPreferences("MaxGoldAIMemory", MODE_PRIVATE)
+                            .edit()
+                            .putString("full_history", getSharedPreferences("MaxGoldAIMemory", MODE_PRIVATE).getString("full_history", "") + "\n📊 [ಲೈವ್ ಸ್ಕ್ರೀನ್]: " + kannadaMsg)
+                            .apply();
+                    }
+
+                    if (confidence >= CONFIDENCE_GATE) {
+                        if ("BUY".equalsIgnoreCase(action)) {
+                            performAutoTap(BUY_BUTTON_X, BUY_BUTTON_Y);
+                        } else if ("SELL".equalsIgnoreCase(action)) {
+                            performAutoTap(SELL_BUTTON_X, SELL_BUTTON_Y);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
+    private void performAutoTap(float x, float y) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            Path clickPath = new Path();
+            clickPath.moveTo(x, y);
+            GestureDescription.StrokeDescription stroke = new GestureDescription.StrokeDescription(clickPath, 0, 100);
+            GestureDescription.Builder builder = new GestureDescription.Builder();
+            builder.addStroke(stroke);
+            dispatchGesture(builder.build(), null, null);
+        });
+    }
+
+    private void speakKannada(String text) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (kannadaTTS != null) {
+                kannadaTTS.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+            }
+        });
+    }
+
+    @Override
+    public void onDestroy() {
+        isScanning = false;
+        scanHandler.removeCallbacksAndMessages(null);
+        if (kannadaTTS != null) {
+            kannadaTTS.stop();
+            kannadaTTS.shutdown();
+        }
+        super.onDestroy();
+    }
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {}
+
+    @Override
+    public void onInterrupt() {}
+}
