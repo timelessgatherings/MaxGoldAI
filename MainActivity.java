@@ -56,6 +56,13 @@ public class MainActivity extends Activity {
     private static final int REQ_CAMERA = 103;
     private static final int REQ_GALLERY = 104;
 
+    private static final String[] GEMINI_MODELS = {
+        "gemini-3.8-flash",
+        "gemini-3.8-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite"
+    };
+
     private TextView chatHistoryText, fullMemoryLogText, deviceStatusText;
     private ScrollView chatScroll;
     private EditText inputMessage, inputApiKey, searchFeatures;
@@ -416,118 +423,4 @@ public class MainActivity extends Activity {
 
     private String getCurrentLocationText() {
         try {
-            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
-                Location loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-                if (loc != null) return loc.getLatitude() + ", " + loc.getLongitude();
-            }
-        } catch (Exception ignored) {}
-        return "Bengaluru, India";
-    }
-
-    private void sendToGeminiLive(String userMessage, String imageBase64) {
-        String time = new SimpleDateFormat("hh:mm a", Locale.getDefault()).format(new Date());
-        appendAndSaveMemory("👤 ನೀವು (" + time + "): " + userMessage);
-
-        String apiKey = prefs.getString("gemini_api_key", "").trim();
-        if (apiKey.isEmpty()) {
-            appendAndSaveMemory("⚠️ ದಯವಿಟ್ಟು ಕೆಳಗಿನ Settings ಟ್ಯಾಬ್‌ನಲ್ಲಿ ನಿಮ್ಮ Google Gemini API Key ಸೇವ್ ಮಾಡಿ.\n");
-            return;
-        }
-
-        Executors.newSingleThreadExecutor().execute(() -> {
-            try {
-                String history = prefs.getString("full_history", "");
-                String contextMem = history.length() > 1500 ? history.substring(history.length() - 1500) : history;
-
-                String systemPrompt = "You are MAX Gold AI, a warm, intelligent human-like personal assistant and XAUUSD ICT trading expert. " +
-                    "Respond naturally in " + currentLangName + " (" + currentLangCode + "). " +
-                    "User Location: " + getCurrentLocationText() + ". Memory History:\n" + contextMem +
-                    "\nUser says: " + userMessage;
-
-                JSONArray parts = new JSONArray();
-                parts.put(new JSONObject().put("text", systemPrompt));
-                if (imageBase64 != null) {
-                    JSONObject inlineData = new JSONObject();
-                    inlineData.put("mime_type", "image/jpeg");
-                    inlineData.put("data", imageBase64);
-                    parts.put(new JSONObject().put("inline_data", inlineData));
-                }
-
-                JSONObject contentObj = new JSONObject().put("parts", parts);
-                JSONArray contents = new JSONArray().put(contentObj);
-
-                JSONObject body = new JSONObject();
-                body.put("contents", contents);
-
-                URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + apiKey);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                conn.setRequestProperty("x-goog-api-key", apiKey);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(25000);
-                conn.setDoOutput(true);
-
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-                }
-
-                int code = conn.getResponseCode();
-                InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
-                Scanner s = new Scanner(is, "UTF-8").useDelimiter("\\A");
-                String respStr = s.hasNext() ? s.next() : "";
-
-                JSONObject respJson = new JSONObject(respStr);
-                if (code >= 200 && code < 300) {
-                    String reply = respJson.getJSONArray("candidates")
-                        .getJSONObject(0).getJSONObject("content")
-                        .getJSONArray("parts").getJSONObject(0).getString("text");
-
-                    runOnUiThread(() -> {
-                        appendAndSaveMemory("🤖 MAX AI: " + reply + "\n");
-                        if (tts != null) tts.speak(reply, TextToSpeech.QUEUE_FLUSH, null, null);
-                    });
-                } else {
-                    String errMsg = respJson.has("error")
-                        ? respJson.getJSONObject("error").optString("message", respStr)
-                        : respStr;
-                    runOnUiThread(() -> appendAndSaveMemory("⚠️ API ದೋಷ (" + code + "): " + errMsg + "\n"));
-                }
-            } catch (Exception e) {
-                runOnUiThread(() -> appendAndSaveMemory("⚠️ ಸಂಪರ್ಕ ದೋಷ: " + e.getMessage() + "\n"));
-            }
-        });
-    }
-
-    private void appendAndSaveMemory(String line) {
-        String updated = prefs.getString("full_history", "") + "\n" + line;
-        prefs.edit().putString("full_history", updated).apply();
-        chatHistoryText.setText(updated);
-        fullMemoryLogText.setText(updated);
-        chatScroll.post(() -> chatScroll.fullScroll(View.FOCUS_DOWN));
-    }
-
-    private void loadMemoryHistory() {
-        String saved = prefs.getString("full_history",
-            "🤖 ನಮಸ್ಕಾರ ಬಾಸ್! ನಾನು MAX AI v3.0. ಮೈಕ್ ON ಮಾಡಿ ಎಷ್ಟು ಹೊತ್ತು ಬೇಕಾದರೂ ಮಾತನಾಡಿ, ಅಥವಾ Settings ನಲ್ಲಿ API Key ಹಾಕಿ ಬಳಸಿ.\n");
-        chatHistoryText.setText(saved);
-        fullMemoryLogText.setText(saved);
-    }
-
-    private String bitmapToBase64(Bitmap bmp) {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        bmp.compress(Bitmap.CompressFormat.JPEG, 70, baos);
-        return Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
-    }
-
-    @Override
-    protected void onDestroy() {
-        isMicManualOn = false;
-        try {
-            if (speechRecognizer != null) speechRecognizer.destroy();
-            if (tts != null) { tts.stop(); tts.shutdown(); }
-        } catch (Exception ignored) {}
-        super.onDestroy();
-    }
-}
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageMana
