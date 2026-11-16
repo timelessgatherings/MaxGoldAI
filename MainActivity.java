@@ -456,16 +456,15 @@ public class MainActivity extends Activity {
 
                 JSONObject contentObj = new JSONObject().put("parts", parts);
                 JSONArray contents = new JSONArray().put(contentObj);
-                JSONArray tools = new JSONArray().put(new JSONObject().put("google_search", new JSONObject()));
 
                 JSONObject body = new JSONObject();
                 body.put("contents", contents);
-                body.put("tools", tools);
 
                 URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + apiKey);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setRequestProperty("x-goog-api-key", apiKey);
                 conn.setConnectTimeout(15000);
                 conn.setReadTimeout(25000);
                 conn.setDoOutput(true);
@@ -474,22 +473,29 @@ public class MainActivity extends Activity {
                     os.write(body.toString().getBytes(StandardCharsets.UTF_8));
                 }
 
-                InputStream is = (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300)
-                    ? conn.getInputStream() : conn.getErrorStream();
+                int code = conn.getResponseCode();
+                InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
                 Scanner s = new Scanner(is, "UTF-8").useDelimiter("\\A");
                 String respStr = s.hasNext() ? s.next() : "";
 
                 JSONObject respJson = new JSONObject(respStr);
-                String reply = respJson.getJSONArray("candidates")
-                    .getJSONObject(0).getJSONObject("content")
-                    .getJSONArray("parts").getJSONObject(0).getString("text");
+                if (code >= 200 && code < 300) {
+                    String reply = respJson.getJSONArray("candidates")
+                        .getJSONObject(0).getJSONObject("content")
+                        .getJSONArray("parts").getJSONObject(0).getString("text");
 
-                runOnUiThread(() -> {
-                    appendAndSaveMemory("🤖 MAX AI: " + reply + "\n");
-                    if (tts != null) tts.speak(reply, TextToSpeech.QUEUE_FLUSH, null, null);
-                });
+                    runOnUiThread(() -> {
+                        appendAndSaveMemory("🤖 MAX AI: " + reply + "\n");
+                        if (tts != null) tts.speak(reply, TextToSpeech.QUEUE_FLUSH, null, null);
+                    });
+                } else {
+                    String errMsg = respJson.has("error")
+                        ? respJson.getJSONObject("error").optString("message", respStr)
+                        : respStr;
+                    runOnUiThread(() -> appendAndSaveMemory("⚠️ API ದೋಷ (" + code + "): " + errMsg + "\n"));
+                }
             } catch (Exception e) {
-                runOnUiThread(() -> appendAndSaveMemory("⚠️ ದೋಷ: API Key ಅಥವಾ ಇಂಟರ್ನೆಟ್ ಪರಿಶೀಲಿಸಿ.\n"));
+                runOnUiThread(() -> appendAndSaveMemory("⚠️ ಸಂಪರ್ಕ ದೋಷ: " + e.getMessage() + "\n"));
             }
         });
     }
@@ -504,7 +510,7 @@ public class MainActivity extends Activity {
 
     private void loadMemoryHistory() {
         String saved = prefs.getString("full_history",
-            "🤖 ನಮಸ್ಕಾರ ಬಾಸ್! ನಾನು MAX AI v3.0. ಮೈಕ್ ON ಮಾಡಿ ಎಷ್ಟು ಹೊತ್ತು ಬೇಕಾದರೂ ಮಾತನಾಡಿ, ಅಥವಾ Settings ನಲ್ಲಿ API Key ಹಾಕಿ ಲೈವ್ ಇಂಟರ್ನೆಟ್ ಬಳಸಿ.\n");
+            "🤖 ನಮಸ್ಕಾರ ಬಾಸ್! ನಾನು MAX AI v3.0. ಮೈಕ್ ON ಮಾಡಿ ಎಷ್ಟು ಹೊತ್ತು ಬೇಕಾದರೂ ಮಾತನಾಡಿ, ಅಥವಾ Settings ನಲ್ಲಿ API Key ಹಾಕಿ ಬಳಸಿ.\n");
         chatHistoryText.setText(saved);
         fullMemoryLogText.setText(saved);
     }
